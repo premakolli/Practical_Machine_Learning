@@ -1,0 +1,66 @@
+---
+title: "Practical Machine Learning - Prediction Assignment"
+output: html_document
+---
+### Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+### Data
+The data for this assignment comes from [here](http://groupware.les.inf.puc-rio.br/har), and contains information from belt, forearm, arm, and dumbbell accelerometers.  The data are split into a training group (19,622) observations and testing group (20 observations).  Participants in this study were asked to do a "Dumbbell Biceps Curl" in five different ways, including using correct form and four common mistakes.  Participants were equipped with censors on the arm, belt and dumbbell itself.  
+
+### Model
+First, I split the training set into 90/10 subsamples.  
+```{r}
+set.seed(614)
+library(lattice); library(ggplot2); library(caret)
+pml.training <- read.csv("C:/Users/Prema/Documents/data/pml-training.csv")
+inTrain <- createDataPartition(y=pml.training$classe, p=0.9, list=FALSE)
+training <- pml.training[inTrain,]
+testing <- pml.training[-inTrain,]
+```
+Note: For this code to run successfully, the file you are reading via the `read.csv("")` must be in the specified location. The 90 percent subsample is used to train the model and the 10 percent subsample is used for cross-validation. The reason for choosing this simple cross-validation rather than K-fold cross-validation is to cut down on execution time.  Next, I implement a Stochastic Gradient Boosting (SGB) algorithm via the `gbm` package.
+```{r}
+ptm <- proc.time()
+modFit <- train(classe ~ user_name + pitch_arm + yaw_arm + roll_arm + roll_belt + pitch_belt + yaw_belt + gyros_belt_x + gyros_belt_y + gyros_belt_z + accel_belt_x + accel_belt_y + accel_belt_z + magnet_belt_x + magnet_belt_y + magnet_belt_z + gyros_arm_x + gyros_arm_y + gyros_arm_z + accel_arm_x + accel_arm_y + accel_arm_z + magnet_arm_x + magnet_arm_y + magnet_arm_z + roll_dumbbell + pitch_dumbbell + yaw_dumbbell, method="gbm", data=training, verbose=FALSE)
+proc.time() - ptm
+```
+I've used `ptm` and `proc.time()` to capture the execution time of the training process
+```{r}
+print(modFit)
+predictTr <- predict(modFit,training)
+table(predictTr, training$classe)
+```
+The model correctly classifies 93.6 percent of the observations in the training sample using 150 trees. My observation is that the "roll_belt"" and "yaw_belt"" features were by far the most important in terms of variable influence.  
+```{r}
+summary(modFit,n.trees=150)
+```
+A plot of these top two features colored by outcome demonstrates their relative importance.  
+```{r}
+qplot(roll_belt, yaw_belt,colour=classe,data=training)
+```
+Even though these are the top features, they're still not great predictors in their own right.  Nonetheless, you can see some bunching in this simple plot.  This confirms the choice of a boosting algorithm as a good choice given the large set of relatively weak predictors.  This next plot further demonstrates the improved performance gained by using boosting iterations.
+```{r}
+ggplot(modFit)
+```
+Next, I check the performance on the 10 percent subsample to get an estimate of the algorithm's out-of-sample performance.
+```{r}
+predictTe <- predict(modFit,testing)
+table(predictTe, testing$classe)
+```
+The algorithm actually peforms only does slightly worse on the testing subset than it did on the full training set, correctly classifying 93.4 percent of the observations.
+
+### Test Set Prediction
+Finally I use the algorithm to predict using the test set.  The results are run through the `pml_write_files()` function from the course Coursera site, and stored for submission.  
+```{r}
+pml.testing <- read.csv("C:/Users/Prema/Documents/data/pml-testing.csv")
+answers <- as.character(predict(modFit, pml.testing))
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
+After submitting these answers, it turns out that the algorithm correctly predicted the outcome for 20/20 observations further confirming its strong out-of-sample classification accuracy.  
